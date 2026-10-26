@@ -197,15 +197,15 @@ public class SquadSpawner : MonoBehaviour
     /// исчерпания попыток спавнится сколько влезло + warning.
     /// Статы НЕ масштабируются — берутся из префаба врага (enemyUnitPrefab) как есть.
     /// </summary>
-    public void SpawnWave(int count)
+    public int SpawnWave(int count)
     {
         var gm = GridManager.Instance;
-        if (gm == null) return;
+        if (gm == null || count <= 0) return 0;
 
         if (enemyUnitPrefab == null)
         {
             Debug.LogError($"[{nameof(SquadSpawner)}] enemyUnitPrefab не назначен — волна отменена.");
-            return;
+            return 0;
         }
 
         // Класс врага задаётся префабом врага: проверяем ДО цикла инстансов.
@@ -213,7 +213,7 @@ public class SquadSpawner : MonoBehaviour
         {
             Debug.LogError($"[{nameof(SquadSpawner)}] На префабе врага '{enemyUnitPrefab.name}' " +
                            "нет компонента Unit — волна отменена.");
-            return;
+            return 0;
         }
 
         // Squad — MonoBehaviour, поэтому создаём его через GameObject + AddComponent
@@ -223,6 +223,7 @@ public class SquadSpawner : MonoBehaviour
         var enemySquad = enemySquadGO.AddComponent<Squad>();
 
         int spawned = 0;
+        int blockSize = Mathf.Clamp(spawnBlockSize, 1, Mathf.Max(1, gm.size));
 
         for (int attempt = 0; attempt < spawnAnchorAttempts && spawned < count; attempt++)
         {
@@ -236,16 +237,16 @@ public class SquadSpawner : MonoBehaviour
 
             // Компактная зона спавна: квадрат spawnBlockSize x spawnBlockSize,
             // прижатый (clamped) к границам карты — в углу сдвигается внутрь.
-            int half = spawnBlockSize / 2;
-            int minX = Mathf.Clamp(anchor.Value.x - half, 0, gm.size - spawnBlockSize);
-            int minY = Mathf.Clamp(anchor.Value.y - half, 0, gm.size - spawnBlockSize);
+            int half = blockSize / 2;
+            int minX = Mathf.Clamp(anchor.Value.x - half, 0, gm.size - blockSize);
+            int minY = Mathf.Clamp(anchor.Value.y - half, 0, gm.size - blockSize);
 
             // Собираем свободные клетки квадрата; IsFree учитывает занятость
             // и блокировку, а удаление из списка гарантирует уникальность.
             var cells = new List<Vector2Int>();
-            for (int y = minY; y < minY + spawnBlockSize; y++)
+            for (int y = minY; y < minY + blockSize; y++)
             {
-                for (int x = minX; x < minX + spawnBlockSize; x++)
+                for (int x = minX; x < minX + blockSize; x++)
                 {
                     var cell = new Vector2Int(x, y);
                     // Только проходимые клетки: заблокированная вода/камень
@@ -299,6 +300,8 @@ public class SquadSpawner : MonoBehaviour
         }
 
         Debug.Log($"[SquadSpawner] Волна: заспавнено {spawned}/{count} врагов (кучкой, край карты, блок {spawnBlockSize}x{spawnBlockSize})");
+        if (spawned == 0) Destroy(enemySquadGO);
+        return spawned;
     }
 
     [Header("Edge Spawn")]

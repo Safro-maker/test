@@ -712,87 +712,71 @@ public class Unit : MonoBehaviour
     /// </summary>
     public void StartMove(Vector2Int fromCell, Vector2Int targetCell)
     {
-        if (GridManager.Instance == null)
-        {
-            Debug.LogError("[Unit] StartMove: GridManager.Instance == null — движение отменено.", this);
-            return;
-        }
-
-        List<Vector2Int> path = Pathfinding.AStar(fromCell, targetCell);
-
-        if (path == null)
-        {
-            Debug.LogWarning($"[Unit] StartMove: путь недоступен ({fromCell} -> {targetCell}) — " +
-                             $"юнит {name} остаётся на месте.", this);
-            IsMoving = false;
-            return;
-        }
-
-        if (moveCoroutine != null)
-        {
-            StopCoroutine(moveCoroutine);
-        }
-
-        moveCoroutine = StartCoroutine(MoveAlongPath(path, targetCell));
+        var gm = GridManager.Instance;
+        List<Vector2Int> path = gm != null ? Pathfinding.AStar(fromCell, targetCell) : null;
+        StartMoveAlongPath(path, fromCell, targetCell);
     }
 
-    /// <summary>
-    /// Запустить перемещение по УЖЕ РАССЧИТАННОМУ пути A* (Fix-2, баг А):
-    /// путь построен в Squad.CommandFormation (проход 0) ДО освобождения
-    /// клеток, поэтому повторный A* здесь не нужен и юнит гарантированно
-    /// не остаётся «призраком» (клетка освобождена только для валидного пути).
-    /// Стартовая клетка передаётся ЯВНО (для логов/страховки).
-    /// </summary>
+    private void StopCurrentMove()
+    {
+        if (moveCoroutine != null) StopCoroutine(moveCoroutine);
+        moveCoroutine = null;
+        IsMoving = false;
+    }
+
     public void StartMoveAlongPath(List<Vector2Int> path, Vector2Int fromCell, Vector2Int targetCell)
     {
-        if (GridManager.Instance == null)
-        {
-            Debug.LogError("[Unit] StartMoveAlongPath: GridManager.Instance == null — движение отменено.", this);
-            return;
-        }
+        StopCurrentMove();
+        var gm = GridManager.Instance;
+        if (gm == null || isDead) return;
 
         if (path == null || path.Count == 0)
         {
-            Debug.LogWarning($"[Unit] StartMoveAlongPath: пустой путь ({fromCell} -> {targetCell}) — " +
-                             $"юнит {name} остаётся на месте.", this);
-            IsMoving = false;
+            // Пустой путь — остановка в текущей логической клетке.
+            transform.position = gm.GridToWorld(GridPos);
+            gm.ForceOccupy(GridPos, this);
             return;
         }
 
-        if (moveCoroutine != null)
-        {
-            StopCoroutine(moveCoroutine);
-        }
-
-        moveCoroutine = StartCoroutine(MoveAlongPath(path, targetCell));
+        var routine = StartCoroutine(MoveAlongPath(path, targetCell));
+        // Корутина без yield может завершиться уже внутри StartCoroutine.
+        moveCoroutine = IsMoving ? routine : null;
     }
 
-    /// <summary>
-    /// Корутина движения ПО КЛЕТКАМ пути: MoveTowards к центру каждой клетки
-    /// пути со скоростью moveSpeed.
-    /// </summary>
     private IEnumerator MoveAlongPath(List<Vector2Int> path, Vector2Int targetCell)
     {
         IsMoving = true;
-
+        Vector2Int lastSafeCell = GridPos;
+        var gm = GridManager.Instance;
         for (int i = 0; i < path.Count; i++)
         {
-            Vector3 waypointPos = GridManager.Instance.GridToWorld(path[i]);
-
-            while (Vector3.Distance(transform.position, waypointPos) > 0.01f)
+            Vector2Int next = path[i];
+            Vector3 waypointPos = gm.GridToWorld(next);
+            while (true)
             {
-                transform.position = Vector3.MoveTowards(
-                    transform.position,
-                    waypointPos,
-                    moveSpeed * Time.deltaTime
-                );
-
+                // Проверяем и перед шагом, и после каждого кадра движения.
+                if (!gm.CanTraverse(lastSafeCell, next))
+                {
+                    transform.position = gm.GridToWorld(lastSafeCell);
+                    gm.Free(GridPos, this);
+                    GridPos = lastSafeCell;
+                    gm.ForceOccupy(GridPos, this);
+                    IsMoving = false;
+                    moveCoroutine = null;
+                    yield break;
+                }
+                if (Vector3.Distance(transform.position, waypointPos) <= 0.01f) break;
+                transform.position = Vector3.MoveTowards(transform.position, waypointPos,
+                    moveSpeed * Time.deltaTime);
                 yield return null;
             }
+            transform.position = waypointPos;
+            lastSafeCell = next;
         }
-
-        transform.position = GridManager.Instance.GridToWorld(targetCell);
-
+        // Не телепортируемся к targetCell, если он не совпадает с концом пути.
+        gm.Free(GridPos, this);
+        GridPos = lastSafeCell;
+        gm.ForceOccupy(GridPos, this);
         IsMoving = false;
         moveCoroutine = null;
     }

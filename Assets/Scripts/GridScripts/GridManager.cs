@@ -188,6 +188,17 @@ public class GridManager : MonoBehaviour
         return result;
     }
 
+    /// <summary>Проверка шага пути с учётом новых препятствий и срезания углов.</summary>
+    public bool CanTraverse(Vector2Int from, Vector2Int to)
+    {
+        if (!InBounds(from) || !InBounds(to) || IsBlocked(to)) return false;
+        Vector2Int delta = to - from;
+        if (Mathf.Abs(delta.x) > 1 || Mathf.Abs(delta.y) > 1) return false;
+        return delta.x == 0 || delta.y == 0 ||
+            (!IsBlocked(from + new Vector2Int(delta.x, 0)) &&
+             !IsBlocked(from + new Vector2Int(0, delta.y)));
+    }
+
     /// <summary>Заблокирована ли клетка.</summary>
     public bool IsBlocked(Vector2Int cell)
     {

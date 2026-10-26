@@ -42,7 +42,10 @@ public class Slinger : Militia
             Mathf.Abs(targetCell.y - from.y)
         );
 
-        return dist <= shotRange;
+        var gm = GridManager.Instance;
+        return dist <= shotRange && gm != null &&
+               gm.InBounds(from) && gm.InBounds(targetCell) &&
+               HasLineOfSight(gm, from, targetCell);
     }
 
     /// <summary>
@@ -105,7 +108,7 @@ public class Slinger : Militia
                 continue;
             }
 
-            if (!HasLineOfSight(gm, u.GridPos))
+            if (!CanAttackCellFrom(GridPos, u.GridPos))
             {
                 continue;
             }
@@ -123,9 +126,9 @@ public class Slinger : Militia
     /// камнем и не заняты юнитом — по ТЗ блокируют ЛЮБЫЕ юниты на пути,
     /// включая своих. Клетка цели всегда пропускается (там стоит враг).
     /// </summary>
-    private bool HasLineOfSight(GridManager gm, Vector2Int to)
+    private bool HasLineOfSight(GridManager gm, Vector2Int from, Vector2Int to)
     {
-        int x0 = GridPos.x, y0 = GridPos.y;
+        int x0 = from.x, y0 = from.y;
         int x1 = to.x, y1 = to.y;
 
         int dx = Mathf.Abs(x1 - x0);
@@ -164,7 +167,15 @@ public class Slinger : Militia
 
             if (!gm.InBounds(cell)) return false;
             if (gm.IsBlocked(cell)) return false;          // камень перекрыл луч
-            if (gm.GetOccupant(cell) != null) return false; // юнит стоит на линии
+            var occupants = gm.GetOccupants(cell);
+            if (occupants != null)
+            {
+                foreach (var occupant in occupants)
+                {
+                    // При проверке будущей позиции не считаем самого стрелка преградой.
+                    if (occupant != null && occupant != this && !occupant.IsDead) return false;
+                }
+            }
         }
     }
 }

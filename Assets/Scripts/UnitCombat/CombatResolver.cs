@@ -26,16 +26,24 @@ public class CombatResolver : MonoBehaviour
             return;
         }
 
-        timer += Time.deltaTime;
+        AdvanceCombat(Time.deltaTime, gm);
+    }
 
-        if (timer < tickInterval)
+    private void AdvanceCombat(float deltaTime, GridManager gm)
+    {
+        float interval = float.IsNaN(tickInterval) || float.IsInfinity(tickInterval)
+            ? 0.1f : Mathf.Max(0.01f, tickInterval);
+        timer += Mathf.Max(0f, deltaTime);
+        // Ограничиваем работу кадра, сохраняя оставшееся время для следующих кадров.
+        for (int ticks = 0; ticks < 64 && timer + 0.000001f >= interval; ticks++)
         {
-            return;
+            timer = Mathf.Max(0f, timer - interval);
+            ResolveTick(gm, interval);
         }
+    }
 
-        // Вычитаем интервал, а не обнуляем таймер — тики не «дрейфуют»,
-        // если кадр длиннее tickInterval.
-        timer -= tickInterval;
+    private void ResolveTick(GridManager gm, float interval)
+    {
 
         // Два прохода: сначала все кулдауны тикают, потом все атакуют
         // (порядок юнитов не даёт преимущества).
@@ -44,14 +52,14 @@ public class CombatResolver : MonoBehaviour
         // Исправление бага MissingReferenceException: в occupancy могли остаться
         // «висячие» ссылки на уничтоженных юнитов — фильтруем живых перед обоими
         // проходами.
-        List<Unit> aliveUnits = units.FindAll(u => u != null && u.gameObject != null);
+        List<Unit> aliveUnits = units.FindAll(u => u != null && u.gameObject != null && !u.IsDead);
 
         // Проход 1: тик кулдаунов.
         foreach (var unit in aliveUnits)
         {
             if (unit != null)
             {
-                unit.cooldownTimer = Mathf.Max(0f, unit.cooldownTimer - tickInterval);
+                unit.cooldownTimer = Mathf.Max(0f, unit.cooldownTimer - interval);
             }
         }
 
@@ -62,7 +70,7 @@ public class CombatResolver : MonoBehaviour
         {
             // Умершие в этом же тике юниты (Destroy отложен до конца кадра,
             // но ссылка уже «null-обёртка») и движущиеся не атакуют.
-            if (unit != null && !unit.IsMoving)
+            if (unit != null && !unit.IsDead && !unit.IsMoving)
             {
                 unit.TryAttack();
             }

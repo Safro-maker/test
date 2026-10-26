@@ -151,7 +151,7 @@ public class InputController : MonoBehaviour
         {
             if (WaveManager.Instance != null)
             {
-                WaveManager.Instance.StartNextWave();
+                WaveManager.Instance.StartFirstWave();
             }
             else
             {

@@ -20,7 +20,3 @@
 *.mdb
 *.opendb
 *.VC.db
-
-# Existing Python project
-__pycache__/
-*.py[cod]

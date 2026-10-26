@@ -7,7 +7,7 @@ using UnityEngine;
 /// Между волнами — пауза с лечением игрока и обратным отсчётом в UI.
 ///
 /// Первая волна запускается вручную клавишей E (InputController вызывает
-/// StartNextWave) — игрок контролирует старт игры. Далее волны идут сами.
+/// StartFirstWave) — игрок контролирует старт игры. Далее волны идут сами.
 ///
 /// Синглтон — доступ через WaveManager.Instance.
 /// </summary>
@@ -36,6 +36,7 @@ public class WaveManager : MonoBehaviour
     private int currentWave = 0;
     private bool isWaveActive = false;
     private float interWaveTimer = 0f;
+    private bool waitingForWave;
 
     private void Awake()
     {
@@ -60,14 +61,15 @@ public class WaveManager : MonoBehaviour
         CheckWaveComplete();
 
         // Пауза между волнами: тикаем таймер, по достижении 0 — новая волна.
-        if (!isWaveActive && interWaveTimer > 0f)
+        if (!isWaveActive && waitingForWave)
         {
             interWaveTimer -= Time.deltaTime;
 
             if (interWaveTimer <= 0f)
             {
                 interWaveTimer = 0f;
-                StartNextWave();
+                // При неудаче повторяем попытку без зачёта волны и лечения.
+                if (!TryStartNextWave()) interWaveTimer = 1f;
             }
             else
             {
@@ -81,31 +83,36 @@ public class WaveManager : MonoBehaviour
     /// позвать SquadSpawner.SpawnWave. Статы врагов НЕ масштабируются —
     /// сложность растёт только количеством.
     /// </summary>
+    public void StartFirstWave()
+    {
+        if (currentWave == 0 && !waitingForWave) StartNextWave();
+    }
+
     public void StartNextWave()
+    {
+        if (isWaveActive || (waitingForWave && interWaveTimer > 0f)) return;
+        TryStartNextWave();
+    }
+
+    private bool TryStartNextWave()
     {
         if (SquadSpawner.Instance == null)
         {
             Debug.LogError("[WaveManager] SquadSpawner.Instance == null — волна не запущена.");
-            return;
+            return false;
         }
+
+        int count = Mathf.Max(1, baseEnemyCount + currentWave * enemiesPerWave);
+        int spawned = SquadSpawner.Instance.SpawnWave(count);
+        if (spawned == 0) return false;
 
         currentWave++;
-
-        // Количество растёт арифметически: 4, 6, 8, ... при enemiesPerWave = 2.
-        int count = baseEnemyCount + (currentWave - 1) * enemiesPerWave;
-
-        // Убрали множители, передаем только количество
-        SquadSpawner.Instance.SpawnWave(count);
-
         isWaveActive = true;
+        waitingForWave = false;
         interWaveTimer = 0f;
-
-        if (waveText != null)
-        {
-            waveText.SetText("Волна " + currentWave);
-        }
-
-        Debug.Log($"[WaveManager] Волна {currentWave}: врагов {count}.");
+        if (waveText != null) waveText.SetText("Волна " + currentWave);
+        Debug.Log($"[WaveManager] Волна {currentWave}: врагов {spawned}/{count}.");
+        return true;
     }
 
     /// <summary>
@@ -130,7 +137,8 @@ public class WaveManager : MonoBehaviour
 
         // Все враги уничтожены.
         isWaveActive = false;
-        interWaveTimer = interWaveDelay;
+        waitingForWave = true;
+        interWaveTimer = Mathf.Max(0f, interWaveDelay);
 
         HealPlayerSquads();
         UpdatePauseText();

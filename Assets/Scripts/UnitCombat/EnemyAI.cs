@@ -442,7 +442,8 @@ public class EnemyAI : MonoBehaviour
         // Согласование семантики IsMoving с Unit: ИИ движет юнитом — юнит «в пути».
         unit.IsMoving = true;
 
-        moveCoroutine = StartCoroutine(MoveAlongPath(finalCell));
+        var routine = StartCoroutine(MoveAlongPath(finalCell));
+        moveCoroutine = unit.IsMoving ? routine : null;
     }
 
     /// <summary>
@@ -507,8 +508,22 @@ public class EnemyAI : MonoBehaviour
 
             Vector3 waypointPos = GridManager.Instance.GridToWorld(targetCell);
 
-            while (Vector3.Distance(transform.position, waypointPos) > 0.01f)
+            while (true)
             {
+                if (!GridManager.Instance.CanTraverse(lastFreeCell, targetCell))
+                {
+                    transform.position = GridManager.Instance.GridToWorld(lastFreeCell);
+                    var gm = GridManager.Instance;
+                    gm.Free(unit.GridPos, unit);
+                    unit.GridPos = lastFreeCell;
+                    gm.ForceOccupy(lastFreeCell, unit);
+                    ReleaseClaim();
+                    path = null;
+                    moveCoroutine = null;
+                    unit.IsMoving = false;
+                    yield break;
+                }
+                if (Vector3.Distance(transform.position, waypointPos) <= 0.01f) break;
                 transform.position = Vector3.MoveTowards(
                     transform.position,
                     waypointPos,
